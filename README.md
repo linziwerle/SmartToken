@@ -6,6 +6,25 @@ People talk to AI like they talk to people — polite, rambling, full of filler.
 
 **Be yourself. I'll handle the cost.**
 
+## Getting Started
+
+```bash
+bun add smart-token        # as a library
+bun add -g smart-token     # as a CLI tool
+```
+
+Requires [Bun](https://bun.sh).
+
+### Development
+
+```bash
+bun install        # install deps
+bun test           # run 156 tests
+bun run lint       # lint
+bun run sharpen    # run CLI
+bun run src/proxy/server.ts   # start proxy directly
+```
+
 ## How to Use
 
 There are three ways to use Smart Token, from easiest to most flexible:
@@ -236,25 +255,6 @@ Works with any LLM API:
 - **OpenAI** (GPT) — native support
 - **Google** (Gemini) — native support
 - **Any OpenAI-compatible API** — Mistral, DeepSeek, local models, etc.
-
-## Install
-
-```bash
-bun add smart-token        # as a library
-bun add -g smart-token     # as a CLI tool
-```
-
-Requires [Bun](https://bun.sh).
-
-## Development
-
-```bash
-bun install        # install deps
-bun test           # run 156 tests
-bun run lint       # lint
-bun run sharpen    # run CLI
-bun run src/proxy/server.ts   # start proxy directly
-```
 
 ## License
 
