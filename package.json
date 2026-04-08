@@ -1,0 +1,54 @@
+{
+  "name": "smart-token",
+  "version": "1.0.0",
+  "description": "Don't change human behavior, optimize what happens underneath. Token compression for LLM API calls.",
+  "module": "index.ts",
+  "main": "index.ts",
+  "types": "index.ts",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts",
+    "./engine": "./src/engine/pipeline.ts",
+    "./cli": "./src/cli/sharpen.ts"
+  },
+  "bin": {
+    "smart-token": "./src/cli/index.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "lint": "eslint src/",
+    "sharpen": "bun run src/cli/sharpen.ts",
+    "stats": "bun run src/cli/stats.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "eslint": "^8.57.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "optionalDependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "openai": "^4.0.0",
+    "@google/generative-ai": "^0.21.0"
+  },
+  "keywords": [
+    "token",
+    "compression",
+    "llm",
+    "ai",
+    "anthropic",
+    "openai",
+    "google",
+    "gemini",
+    "claude",
+    "gpt",
+    "cost",
+    "optimization",
+    "prompt",
+    "tokens"
+  ],
+  "license": "MIT"
+}
