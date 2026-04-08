@@ -6,15 +6,54 @@ People talk to AI like they talk to people — polite, rambling, full of filler.
 
 **Be yourself. I'll handle the cost.**
 
-## Install
+## How to Use
+
+There are three ways to use Smart Token, from easiest to most flexible:
+
+### 1. Local Proxy (recommended)
+
+A local proxy that compresses API requests on the fly. Point your SDK at `localhost:3141` — no code changes needed.
 
 ```bash
-bun add smart-token
+bun add -g smart-token
+
+# Start the proxy
+smart-token start           # foreground
+smart-token start -d        # daemon (background)
 ```
 
-## SDK Wrapper
+Route your API calls through it:
 
-Drop in, compression happens automatically.
+```bash
+export ANTHROPIC_BASE_URL=http://localhost:3141
+export OPENAI_BASE_URL=http://localhost:3141/openai
+```
+
+That's it. Every API call now gets compressed automatically.
+
+```bash
+# Check what's happening
+smart-token status
+
+# Switch display modes (hot-reloads, no restart needed)
+smart-token mode quiet      # compress silently, log to file
+smart-token mode default    # one-line stats per request
+smart-token mode dev        # show what was trimmed (strikethrough diff)
+smart-token mode off        # passthrough, no compression
+
+# View recent request logs
+smart-token logs
+
+# Stop (prints a session report with savings summary)
+smart-token stop
+
+# Auto-start on login (macOS)
+smart-token install
+```
+
+### 2. SDK Wrapper
+
+Drop-in replacement for your API client. Compression happens automatically.
 
 ```typescript
 import { createOptimizedClient } from "smart-token";
@@ -22,7 +61,7 @@ import { createOptimizedClient } from "smart-token";
 const client = createOptimizedClient({
   provider: "anthropic",  // also: "openai", "google", "generic"
   apiKey: process.env.ANTHROPIC_API_KEY,
-  compression: { tier: "B" },  // A = safe, B = moderate, C = aggressive
+  compression: { tier: "B" },
 });
 
 // Use exactly like the native SDK
@@ -37,23 +76,19 @@ const stats = await client.cleanup();
 // { totalTokensSaved: 12847, savingsPercent: "58%", estimatedCostSaved: "$0.38" }
 ```
 
-## CLI
+### 3. CLI (for prompt files)
+
+Compress prompt files before deploying them.
 
 ```bash
-# Compress a prompt file (Layer 1 + Layer 4)
-npx smart-token sharpen ./system-prompt.txt
-
-# Compress a folder
-npx smart-token sharpen ./prompts/
-
-# Watch mode
-npx smart-token sharpen ./system-prompt.txt --watch
-
-# View savings dashboard
-npx smart-token stats ./token-savings.json
+npx smart-token sharpen ./system-prompt.txt       # compress a file
+npx smart-token sharpen ./prompts/                 # compress a folder
+npx smart-token sharpen ./prompt.txt --watch       # watch for changes
+npx smart-token sharpen ./prompt.txt --dev         # see what was trimmed
+npx smart-token stats ./token-savings.json         # savings dashboard
 ```
 
-## Direct API
+### 4. Direct API
 
 ```typescript
 import { compress, compressMessage } from "smart-token";
@@ -61,35 +96,118 @@ import { compress, compressMessage } from "smart-token";
 const result = compress("Hey Claude! Please fix this bug 😊");
 // result.compressed: "[polite, fix] fix this bug"
 // result.stats: { saved: 7, savingsPercent: "46.7%" }
-
-const { compressed } = compressMessage("Thanks so much!!", "A");
-// "thanks"
 ```
+
+## What Gets Trimmed
+
+Smart Token uses three compression tiers. Each tier includes everything from the tier above it.
+
+### Tier A — Safe (always removable)
+
+Things that carry zero information for the AI:
+
+| Category | What gets removed | Example |
+|----------|------------------|---------|
+| Emojis | All emoji characters | 😊 🎉 👍 → *(removed)* |
+| Greetings | "Hey Claude", "Hi there", "Hello" | *Hey Claude!* Can you... → Can you... |
+| Reaction words | lol, haha, omg, rofl | That's great lol → That's great |
+| Filler sounds | hmm, umm, uh | *Hmm,* I think... → I think... |
+| Filler words | basically, actually, just, like, you know, well, I mean, kind of | It's *basically just* a loop → It's a loop |
+| Pleasantries | "Hope you're doing well", "Hope this helps" | *(removed)* |
+| Verbose thanks | "Thank you so much for your help!" | → thanks |
+| Trailing thanks | "Thanks!" at end of message | *(removed)* |
+| Apologies | "Sorry to bother you", "I know this is basic but" | *(removed)* |
+| Stalling ellipsis | Trailing "..." | I was thinking... → I was thinking |
+| Extra punctuation | Multiple ??? or !!! | What???? → What? |
+| Extra whitespace | Blank lines, trailing spaces | *(collapsed)* |
+| Markdown in chat | Bold/italic in casual messages | \*\*this\*\* → this |
+| Encoding garbage | Mojibake from copy-paste | *(cleaned)* |
+
+### Tier B — Moderate (default)
+
+Conversational padding that humans use but AI doesn't need:
+
+| Category | What gets removed | Example |
+|----------|------------------|---------|
+| Polite requests | "Can you please", "Could you maybe", "Would it be possible to" | *Can you please* fix → fix |
+| Wondering | "I was wondering if" | *I was wondering if* this works → this works |
+| Help framing | "Help me to", "Assist me" | *Help me* understand → understand |
+| Please | Standalone "please" | *Please* check this → check this |
+| Thinking out loud | "Let me think", "I guess what I really want is" | *Let me think...* a sorted list → a sorted list |
+| Pronoun framing | "I wrote this function and want you to" | *I wrote this* function *and want you to* check → function — check |
+| Narrating | "I'm going to paste my code below", "Here's my error" | *(removed)* |
+| Over-explanation | "cleaner and more readable and easier to maintain" | → cleaner, readable |
+| Permission asking | "Is it okay if I", "Do you mind if I" | *(removed)* |
+| Softening | "This might be a dumb question but" | *(removed)* |
+| Hedging | "Do you think maybe I should", "I'm not sure if" | *(removed)* |
+| Validation seeking | "Does that make sense?", "Know what I mean?" | *(removed)* |
+| Context preamble | "I've been working on this for hours and" | *(removed)* |
+
+### Tier C — Aggressive
+
+Structural words that can be inferred from context:
+
+| Category | What gets removed | Example |
+|----------|------------------|---------|
+| Articles | a, an, the | *the* function returns *a* list → function returns list |
+| Linking verbs | is, are, was, were | This *is* broken → This broken |
+| Vague quantifiers | very, really, quite, pretty much, rather | *very* slow → slow |
+| Demonstratives | "this" (when not comparing) | *this* code fails → code fails |
+| Prepositions | that, for, in the, of the | Check *that* it works → Check it works |
+
+### Chinese Language Support
+
+The same tier system applies to Chinese text (auto-detected):
+
+| Tier | What gets removed | Example |
+|------|------------------|---------|
+| A | Sentence-final particles (啊、呢、吧、嘛、啦、咯) | 代码有问题*吧* → 代码有问题 |
+| A | Filler words (然后、就是说、那个、这个、好像) | *然后就是说那个*代码有问题 → 代码有问题 |
+| A | Reaction words (哈哈、呵呵、嘿嘿) | *(removed)* |
+| B | Politeness (请问、麻烦你、不好意思、请帮我) | *请帮我*看一下 → 看一下 |
+| B | Hedging (我想、我觉得) | *我觉得*这里有问题 → 这里有问题 |
+| B | Verbose thanks (非常感谢、太感谢了) | → 谢谢 |
+| C | Demonstratives (这个、那个 before nouns) | *这个*代码 → 代码 |
+| C | Filler measure words (一下) | 看*一下* → 看 |
+
+### What's Never Touched
+
+No matter the tier, Smart Token preserves:
+
+- **Code blocks** — everything inside ``` fences is untouched
+- **Constraints** — "must", "only", "don't", "never", "always"
+- **Preferences** — "I prefer X over Y"
+- **Conditionals** — "if X then Y", "unless"
+- **Comparisons** — "this vs that", "compared to"
+- **Context that matters** — file paths, error messages, variable names, URLs
 
 ## How It Works
 
 Five compression layers run in order, biggest savings first:
 
-| Layer | What it does | Example savings |
+| Layer | What it does | Typical savings |
 |-------|-------------|----------------|
 | 5. History | Sliding window + breathing archive for old messages | Biggest at scale |
-| 4. System prompt | Trim + deduplicate + auto-cache structuring | ~10-30% |
-| 3. Media & files | CSV, JSON, XML, HTML compression | Varies |
+| 4. System prompt | Trim + deduplicate + section classification for caching | ~10-30% |
+| 3. Media & files | CSV, JSON, XML, HTML, Markdown compression | Varies by format |
 | 2. Code blocks | Strip comments, logs, whitespace, IDE boilerplate | ~50-70% on logs |
-| 1. Messages | Strip filler, greetings, emojis, hedging | ~20-60% |
+| 1. Messages | Apply tier rules (tables above) + tone/intent tagging | ~20-60% |
 
-A **verification pass** after compression catches accidental context loss — if meaning degrades, it falls back to the original.
+A **verification pass** runs after compression — if meaning degrades, it falls back to the original.
 
-## Compression Tiers
+### Tone & Intent Detection
 
-**A (safe)** — emojis, greetings, filler words, apologies, reaction words
+Layer 1 detects the tone and intent of your message and prepends a compact tag:
 
-**B (default)** — A + pronouns, hedging, narrating, redundancy, over-explanation
+```
+"Hey Claude! I was wondering if you could please help me fix this bug? 😊"
+→ [polite, fix] fix this bug?
+```
 
-**C (aggressive)** — A+B + articles, linking verbs, quantifiers, prepositions
+Detected tones: `polite`, `uncertain`, `frustrated`, `exploring`, `urgent`, `neutral`
+Detected intents: `confirm`, `compare`, `explain`, `fix`, `build`, `review`, `explore`
 
-### Never touched
-Constraints, context, preferences, code blocks, conditionals, comparisons.
+The AI still knows *how* you were asking — it's just encoded in 2 words instead of 15.
 
 ## Examples
 
@@ -110,9 +228,23 @@ Constraints, context, preferences, code blocks, conditionals, comparisons.
 → [12 lines: errors + collapsed repeats]                           (72% saved)
 ```
 
-## Language Support
+## Providers
 
-English (full), Chinese (particles, filler, politeness), bilingual auto-detection.
+Works with any LLM API:
+
+- **Anthropic** (Claude) — native support
+- **OpenAI** (GPT) — native support
+- **Google** (Gemini) — native support
+- **Any OpenAI-compatible API** — Mistral, DeepSeek, local models, etc.
+
+## Install
+
+```bash
+bun add smart-token        # as a library
+bun add -g smart-token     # as a CLI tool
+```
+
+Requires [Bun](https://bun.sh).
 
 ## Development
 
@@ -121,23 +253,8 @@ bun install        # install deps
 bun test           # run 156 tests
 bun run lint       # lint
 bun run sharpen    # run CLI
+bun run src/proxy/server.ts   # start proxy directly
 ```
-
-## Publish to npm
-
-```bash
-npm login                # one-time setup
-npm publish --dry-run    # preview what gets published
-npm publish              # publish for real
-```
-
-After publishing, anyone can use:
-```bash
-bun add smart-token                        # as a library
-npx smart-token sharpen ./prompt.txt       # as a CLI tool
-```
-
-**Note:** Smart Token uses Bun APIs, so users need [Bun](https://bun.sh) installed.
 
 ## License
 

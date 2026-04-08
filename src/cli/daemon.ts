@@ -71,6 +71,68 @@ async function startDaemon(): Promise<void> {
   }
 }
 
+// ── session report ──
+async function printSessionReport(): Promise<void> {
+  const session = await getSession();
+  if (session.requests === 0) {
+    console.log("\n  No requests this session.\n");
+    return;
+  }
+
+  const started = session.started ? new Date(session.started) : null;
+  const duration = started
+    ? formatDuration(Date.now() - started.getTime())
+    : "unknown";
+
+  // Cost estimate ($3/MTok input — Claude Sonnet ballpark)
+  const costPerToken = 3 / 1_000_000;
+  const costSaved = (session.totalSaved * costPerToken).toFixed(4);
+
+  // Layer breakdown — count how many requests each layer contributed to
+  const layerHits = new Map<string, number>();
+  for (const entry of session.entries) {
+    for (const layer of entry.layersFired) {
+      layerHits.set(layer, (layerHits.get(layer) ?? 0) + 1);
+    }
+  }
+  const topLayers = [...layerHits.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+
+  console.log(`
+  ── session report ──────────────────────
+  Duration:       ${duration}
+  Requests:       ${session.requests}
+  Tokens saved:   ${session.totalSaved.toLocaleString()} (${session.savingsPercent})
+  Cost saved:     ~$${costSaved}
+  Avg overhead:   ${avgOverhead(session)}ms`);
+
+  if (topLayers.length > 0) {
+    console.log("  Layers fired:");
+    for (const [layer, hits] of topLayers) {
+      const pct = ((hits / session.requests) * 100).toFixed(0);
+      console.log(`    ${layer.padEnd(22)} ${hits}/${session.requests} requests (${pct}%)`);
+    }
+  }
+
+  console.log("  ────────────────────────────────────────\n");
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+  return `${seconds}s`;
+}
+
+function avgOverhead(session: { entries: Array<{ overheadMs: number }> }): number {
+  if (session.entries.length === 0) return 0;
+  const total = session.entries.reduce((sum, e) => sum + e.overheadMs, 0);
+  return Math.round(total / session.entries.length);
+}
+
 // ── stop ──
 export async function stopCommand(): Promise<void> {
   const pid = await getRunningPid();
@@ -78,6 +140,8 @@ export async function stopCommand(): Promise<void> {
     console.log("  Not running.");
     return;
   }
+
+  await printSessionReport();
 
   try {
     process.kill(pid, "SIGTERM");
