@@ -189,6 +189,20 @@ The same tier system applies to Chinese text (auto-detected):
 | C | Demonstratives (这个、那个 before nouns) | *这个*代码 → 代码 |
 | C | Filler measure words (一下) | 看*一下* → 看 |
 
+### Tone & Intent Detection
+
+Layer 1 also detects the tone and intent of your message and prepends a compact tag:
+
+```
+"Hey Claude! I was wondering if you could please help me fix this bug? 😊"
+→ [polite, fix] fix this bug?
+```
+
+Detected tones: `polite`, `uncertain`, `frustrated`, `exploring`, `urgent`, `neutral`
+Detected intents: `confirm`, `compare`, `explain`, `fix`, `build`, `review`, `explore`
+
+The AI still knows *how* you were asking — it's just encoded in 2 words instead of 15.
+
 ### What's Never Touched
 
 No matter the tier, Smart Token preserves:
@@ -202,31 +216,59 @@ No matter the tier, Smart Token preserves:
 
 ## How It Works
 
-Five compression layers run in order, biggest savings first:
+Five compression layers, each targeting a different part of the API request. They run in order from biggest to smallest savings potential.
 
-| Layer | What it does | Typical savings |
-|-------|-------------|----------------|
-| 5. History | Sliding window + breathing archive for old messages | Biggest at scale |
-| 4. System prompt | Trim + deduplicate + section classification for caching | ~10-30% |
-| 3. Media & files | CSV, JSON, XML, HTML, Markdown compression | Varies by format |
-| 2. Code blocks | Strip comments, logs, whitespace, IDE boilerplate | ~50-70% on logs |
-| 1. Messages | Apply tier rules (tables above) + tone/intent tagging | ~20-60% |
+| Layer | Target | Typical savings |
+|-------|--------|----------------|
+| 5. History | Conversation history | Biggest at scale |
+| 4. System prompt | System instructions | ~10-30% |
+| 3. Media & files | Embedded data (CSV, JSON, XML, HTML) | Varies by format |
+| 2. Code blocks | Code, logs, build output | ~50-70% on logs |
+| 1. Messages | User messages | ~20-60% |
 
-A **verification pass** runs after compression — if meaning degrades, it falls back to the original.
+A **verification pass** runs after every compression — if meaning degrades, it falls back to the original.
 
-### Tone & Intent Detection
+### Layer 5 — History Compression
 
-Layer 1 detects the tone and intent of your message and prepends a compact tag:
+Long conversations accumulate messages the AI doesn't need in full. Layer 5 manages this with:
 
-```
-"Hey Claude! I was wondering if you could please help me fix this bug? 😊"
-→ [polite, fix] fix this bug?
-```
+- **Sliding window** — keeps the most recent messages (default 10) in full
+- **Breathing archive** — older messages get summarized into compact topic-tagged summaries
+- **Decision preservation** — constraints, preferences, and decisions ("we're using X not Y") are never summarized away
+- **Failed attempt collapsing** — "try X → didn't work → try Y → worked" sequences collapse to just the working solution
+- **Acknowledgment compression** — verbose "thank you so much!" becomes "thanks", while grounding signals ("got it", "makes sense") stay
 
-Detected tones: `polite`, `uncertain`, `frustrated`, `exploring`, `urgent`, `neutral`
-Detected intents: `confirm`, `compare`, `explain`, `fix`, `build`, `review`, `explore`
+### Layer 4 — System Prompt Compression
 
-The AI still knows *how* you were asking — it's just encoded in 2 words instead of 15.
+System prompts are often the largest token cost and they repeat every single request. Layer 4 optimizes them:
+
+- **Section classification** — identifies static (role, rules), semi-static (tools, context), and dynamic (current date, session) sections
+- **Cache-friendly reordering** — puts static content first so API-level prompt caching hits more often
+- **Negative instruction dedup** — "don't do X", "never do X", "avoid X" about the same thing → keeps only the most specific version
+- **Rule example collapsing** — if a rule is clear on its own, verbose examples get dropped
+- **Section deduplication** — detects >70% overlap between sections and removes duplicates
+- **Relevance filtering** — optionally strips sections unrelated to the current message context
+
+### Layer 3 — Media & File Compression
+
+When users paste data into prompts, it's usually way more than the AI needs:
+
+- **CSV** — 1000-row CSV becomes: schema + first 10 rows + column stats (min/max/avg or unique count)
+- **JSON** — large arrays of same-structure objects become: schema + 3 examples + count. Nested objects get depth-limited
+- **XML/HTML** — strips comments, collapses whitespace, removes redundant attributes
+- **Markdown** — cleans up formatting noise while preserving structure
+
+### Layer 2 — Code Block Compression
+
+Code pasted in prompts often has noise the AI doesn't need to read:
+
+- **Comment stripping** — removes single-line, block, copyright headers, TODO comments, and commented-out code (supports 17 languages)
+- **Language-aware whitespace** — normalizes indentation but preserves it for Python, YAML, Makefile, and Haskell
+- **Log compression** — collapses timestamps, thread IDs, repeated lines, and shortens file paths. 200 lines of logs → errors + collapsed repeats
+- **Test output compression** — strips passing tests, keeps only failures
+- **Build output compression** — strips progress bars and step-by-step lines, keeps errors and warnings
+- **Terminal noise** — removes ANSI color codes, shell prompts
+- **Repetitive code detection** — 3+ similar functions get collapsed to pattern + count
 
 ## Examples
 
