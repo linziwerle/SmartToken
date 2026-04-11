@@ -27,14 +27,22 @@ function countTokens(text: string): number {
   return Math.max(1, count);
 }
 
-// Cost per 1K input tokens (rough estimates in USD)
+// Cost per 1K input tokens (USD, updated April 2026)
 const COST_PER_1K_INPUT: Record<string, number> = {
-  "claude-3-opus": 0.015,
-  "claude-3-sonnet": 0.003,
-  "claude-3-haiku": 0.00025,
-  "gpt-4": 0.03,
+  // Anthropic — current generation
+  "claude-opus-4-6": 0.005,
+  "claude-sonnet-4-6": 0.003,
+  "claude-haiku-4-5": 0.001,
+  // Anthropic — previous generation
+  "claude-opus-4-1": 0.015,
+  "claude-sonnet-4-5": 0.003,
+  // OpenAI — current generation
+  "gpt-4.1": 0.002,
+  "gpt-4o": 0.0025,
+  "gpt-4o-mini": 0.00015,
+  // OpenAI — legacy
   "gpt-4-turbo": 0.01,
-  "gpt-3.5-turbo": 0.0005,
+  "gpt-4": 0.03,
   default: 0.003, // conservative estimate
 };
 

@@ -1,7 +1,26 @@
 import { compress } from "../engine/pipeline.ts";
 import { compressSystemPrompt } from "../engine/layer4-system.ts";
+import { compressHistory, BreathingArchive, type Message } from "../engine/layer5-history.ts";
 import { computeStats } from "../engine/token-counter.ts";
 import type { CompressionConfig, TokenStats } from "../types/index.ts";
+
+// Per-session breathing archive — old messages live here, not deleted
+let sessionArchive: BreathingArchive | null = null;
+
+function getArchive(): BreathingArchive {
+  if (!sessionArchive) {
+    sessionArchive = new BreathingArchive(".smart-token-history.json");
+  }
+  return sessionArchive;
+}
+
+// Called when proxy stops — clean up archive file (privacy)
+export async function cleanupSession(): Promise<void> {
+  if (sessionArchive) {
+    await sessionArchive.cleanup();
+    sessionArchive = null;
+  }
+}
 
 export interface CompressionResult {
   body: Record<string, unknown>;
@@ -20,6 +39,7 @@ export function compressRequestBody(
 ): CompressionResult {
   let totalOriginal = 0;
   let totalCompressed = 0;
+  let totalSaved_history = 0;
   const layersFired: string[] = [];
 
   // Compress system prompt (string or array of blocks)
@@ -51,7 +71,53 @@ export function compressRequestBody(
   }
 
   // Compress messages
-  const messages = body.messages as Array<Record<string, unknown>> | undefined;
+  let messages = body.messages as Array<Record<string, unknown>> | undefined;
+
+  // Layer 5: History compression (operates on the full message array)
+  if (messages && Array.isArray(messages) && config.history && messages.length > 10) {
+    const indexed: Message[] = messages.map((msg, i) => ({
+      role: (msg.role as "user" | "assistant") ?? "user",
+      content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+      index: i,
+    }));
+
+    // Extract the last user message for topic-based archive retrieval
+    const lastUserMsg = [...indexed].reverse().find(m => m.role === "user");
+    const currentMessage = lastUserMsg?.content;
+
+    // Get the breathing archive — old messages are stored here, not deleted
+    const archive = getArchive();
+
+    // Count original tokens for all messages
+    const originalTotal = indexed.reduce((sum, m) => sum + computeStats(m.content, "").originalTokens, 0);
+
+    const compressed = compressHistory(
+      indexed,
+      config,
+      { windowSize: 10 },
+      archive,
+      currentMessage
+    );
+
+    // Count compressed tokens
+    const compressedTotal = compressed.reduce((sum, m) => sum + computeStats(m.content, "").originalTokens, 0);
+
+    const historySaved = originalTotal - compressedTotal;
+    if (historySaved > 0) {
+      totalSaved_history = historySaved;
+      layersFired.push("history-compressor");
+
+      // Rebuild messages array from compressed history.
+      // compressHistory returns Message[] which may be shorter (dropped messages)
+      // or have modified content. Each Message has role + content — use directly.
+      messages = compressed.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+      body = { ...body, messages };
+    }
+  }
+
   if (messages && Array.isArray(messages)) {
     const compressedMessages = messages.map((msg) => {
       // Only compress user messages
@@ -101,14 +167,17 @@ export function compressRequestBody(
     body = { ...body, messages: compressedMessages };
   }
 
-  const totalSaved = totalOriginal - totalCompressed;
-  const pct = totalOriginal > 0 ? ((totalSaved / totalOriginal) * 100).toFixed(1) : "0.0";
+  // Add history savings (layer 5 operates before per-message compression)
+  const perMessageSaved = totalOriginal - totalCompressed;
+  const totalSaved = perMessageSaved + totalSaved_history;
+  const adjustedOriginal = totalOriginal + totalSaved_history;
+  const pct = adjustedOriginal > 0 ? ((totalSaved / adjustedOriginal) * 100).toFixed(1) : "0.0";
 
   return {
     body,
     stats: {
-      totalOriginalTokens: totalOriginal,
-      totalCompressedTokens: totalCompressed,
+      totalOriginalTokens: adjustedOriginal,
+      totalCompressedTokens: adjustedOriginal - totalSaved,
       totalSaved,
       savingsPercent: `${pct}%`,
       layersFired,

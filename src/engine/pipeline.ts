@@ -75,6 +75,12 @@ export function compress(
     });
   }
 
+  // Safety net: if compression made things longer, return original.
+  // SmartToken should never increase token count.
+  if (current.length >= original.length) {
+    current = original;
+  }
+
   // Get tone/intent from the original message (before compression)
   const { toneIntent } = compressMessage(original, cfg.tier);
   const stats = computeStats(original, current);

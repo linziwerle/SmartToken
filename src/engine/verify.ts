@@ -205,10 +205,11 @@ export function verifyCompression(
   for (const code of originalCode) {
     if (!compressed.includes(code)) {
       warnings.push(`inline code \`${code}\` was mangled`);
-      // Restore the inline code reference
-      result = result + ` \`${code}\``;
+      // Fall back to original — never inject tags or append content
+      result = original;
       restored = true;
       restoredWords.push(code);
+      return { compressed: result, restored, warnings, restoredWords };
     }
   }
 
@@ -216,15 +217,12 @@ export function verifyCompression(
   for (const word of missingWords) {
     if (isUnusualWord(word)) {
       // This word isn't common English — might be a typo, variable name,
-      // or domain term. Restore it with surrounding context.
-      const context = getContextAroundWord(original, word);
-      if (context) {
-        warnings.push(`unusual word "${word}" lost context, restoring`);
-        // Append the context snippet
-        result = result + ` [context: ${context}]`;
-        restored = true;
-        restoredWords.push(word);
-      }
+      // or domain term. Fall back to original rather than injecting tags.
+      warnings.push(`unusual word "${word}" lost context, restoring original`);
+      result = original;
+      restored = true;
+      restoredWords.push(word);
+      return { compressed: result, restored, warnings, restoredWords };
     }
   }
 

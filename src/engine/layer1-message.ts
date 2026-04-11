@@ -436,18 +436,27 @@ export function compressMessage(
     return { compressed: text.trim(), toneIntent };
   }
 
-  // Add tone/intent prefix if meaningful
-  const prefix = buildToneIntentPrefix(toneIntent);
-  const compressed = prefix + processed;
+  // Tone/intent is detected and returned for analytics,
+  // but NOT injected into the compressed text.
+  // SmartToken only removes — never adds content to the request.
 
-  return { compressed, toneIntent };
+  return { compressed: processed, toneIntent };
 }
+
+// ── Minimum savings threshold ──
+// If compression doesn't save at least this many characters,
+// return the original. Prevents net-negative compression on
+// short messages where trimming a few words isn't worth it.
+const MIN_SAVINGS_CHARS = 10;
 
 // ── Layer interface ──
 export const layer1: Layer = {
   name: "message-compressor",
   process(text: string, config: CompressionConfig): string {
     const { compressed } = compressMessage(text, config.tier);
+    const saved = text.length - compressed.length;
+    // If we didn't save enough, return original untouched
+    if (saved < MIN_SAVINGS_CHARS) return text;
     return compressed;
   },
 };

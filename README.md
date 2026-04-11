@@ -6,6 +6,18 @@ People talk to AI like they talk to people — polite, rambling, full of filler.
 
 **Be yourself. I'll handle the cost.**
 
+## Who is this for
+
+- **AI wrapper products** proxying thousands of user requests — 26% off your API bill, one line of config
+- **Agent-heavy workflows** with long system prompts, tool definitions, and 30+ turn histories
+- **Cost-sensitive developers** who don't want to rewrite their prompts to save tokens
+
+Two commands. No behavior change. No instructions injected into your API calls — all compression happens locally before the request leaves your machine.
+
+```bash
+bun add -g smart-token && smart-token start
+```
+
 ## Getting Started
 
 ```bash
@@ -89,7 +101,7 @@ const response = await client.messages.create({
   max_tokens: 1024,
   messages: [{ role: "user", content: "Hey Claude! Can you please help me fix this bug? Thanks! 😊" }],
 });
-// What actually gets sent: "[polite, fix] fix this bug?"
+// What actually gets sent: "fix this bug?"
 
 const stats = await client.cleanup();
 // { totalTokensSaved: 12847, savingsPercent: "58%", estimatedCostSaved: "$0.38" }
@@ -113,8 +125,8 @@ npx smart-token stats ./token-savings.json         # savings dashboard
 import { compress, compressMessage } from "smart-token";
 
 const result = compress("Hey Claude! Please fix this bug 😊");
-// result.compressed: "[polite, fix] fix this bug"
-// result.stats: { saved: 7, savingsPercent: "46.7%" }
+// result.compressed: "fix this bug"
+// result.stats: { saved: 9, savingsPercent: "56.3%" }
 ```
 
 ## What Gets Trimmed
@@ -207,17 +219,12 @@ The same tier system applies to Chinese text (auto-detected):
 
 #### Tone & Intent Detection
 
-Layer 1 also detects the tone and intent of your message and prepends a compact tag:
-
-```
-"Hey Claude! I was wondering if you could please help me fix this bug? 😊"
-→ [polite, fix] fix this bug?
-```
+Layer 1 detects the tone and intent of your message for analytics and logging:
 
 Detected tones: `polite`, `uncertain`, `frustrated`, `exploring`, `urgent`, `neutral`
 Detected intents: `confirm`, `compare`, `explain`, `fix`, `build`, `review`, `explore`
 
-The AI still knows *how* you were asking — it's just encoded in 2 words instead of 15.
+Tone data is available in the stats object but is **not injected into the request**. Smart Token only removes content — it never adds tags, prefixes, or metadata to what gets sent to the API.
 
 #### What's Never Touched
 
@@ -284,10 +291,10 @@ Long conversations accumulate messages the AI doesn't need in full. Layer 5 mana
 
 ```
 "Hey Claude! I was wondering if you could please help me fix this bug? 😊"
-→ [polite, fix] fix this bug?                                      (61% saved)
+→ fix this bug?                                                    (61% saved)
 
 "Hmm, let me think... I guess what I really want is a sorted list"
-→ [uncertain] a sorted list                                        (61% saved)
+→ a sorted list                                                    (61% saved)
 
 "Thank you so much that was really helpful!"
 → thanks                                                           (93% saved)
@@ -298,6 +305,23 @@ Long conversations accumulate messages the AI doesn't need in full. Layer 5 mana
 [200 lines of logs with timestamps, thread IDs, repeated entries]
 → [12 lines: errors + collapsed repeats]                           (72% saved)
 ```
+
+## Benchmarks
+
+Real-world use cases, tested with `bun benchmarks/run.ts`:
+
+| Use Case | Messages | Savings | Main layers |
+|----------|----------|---------|-------------|
+| Data analysis (CSV/JSON in prompts) | 5 | **67%** | Media compression |
+| Code assistant (React debugging) | 8 | **62%** | Code + message compression |
+| Long dev session (2hr, auth+db) | 55 | **61%** | History + code compression |
+| Customer support chatbot | 31 | **47%** | History compression |
+| Multilingual (English + Chinese) | 9 | **38%** | Message + code compression |
+| Agent workflow (Claude Code-style) | 7 | **1%** | System prompt dedup |
+
+Savings vary by content type. Code blocks, pasted data, and long conversation histories save the most. Pre-optimized system prompts (like Claude Code's) save the least — there's nothing to trim.
+
+Run the demo: `bun demo.ts`
 
 ## Providers
 
